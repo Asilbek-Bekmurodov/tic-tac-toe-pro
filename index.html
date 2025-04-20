@@ -123,7 +123,7 @@
         const room = roomIdInput.value.trim();
         if (!room) return;
 
-        socket = new WebSocket("https://tic-tac-toe-pro.onrender.com");
+        socket = new WebSocket("wss://tic-tac-toe-pro.railway.internal");
 
         socket.addEventListener("open", () => {
           socket.send(JSON.stringify({ type: "join", roomId: room }));
