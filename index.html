@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Infinity Tic Tac Toe - Multiplayer</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: #f0f0f0;
+      }
+      #board {
+        display: grid;
+        grid-template-columns: repeat(3, 100px);
+        grid-gap: 5px;
+        margin-top: 20px;
+      }
+      .cell {
+        width: 100px;
+        height: 100px;
+        background: #fff;
+        font-size: 2em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        border: 2px solid #000;
+        transition: background 0.3s, opacity 0.4s;
+      }
+      #status,
+      #chatBox,
+      #winner,
+      #shots,
+      #score {
+        margin-top: 10px;
+        font-size: 1.2em;
+      }
+      #winner {
+        font-weight: bold;
+        color: green;
+      }
+      #roomForm,
+      #chatForm {
+        display: flex;
+        gap: 10px;
+      }
+      #messages {
+        height: 100px;
+        overflow-y: auto;
+        width: 300px;
+        border: 1px solid #ccc;
+        padding: 5px;
+        background: #fff;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Join a Game Room</h1>
+    <form id="roomForm">
+      <input type="text" id="roomId" placeholder="Enter room ID" required />
+      <button type="submit">Join Room</button>
+    </form>
+    <div id="status"></div>
+    <div id="winner"></div>
+    <div id="score"></div>
+    <div id="shots"></div>
+    <button id="resetBtn" style="display: none; margin-top: 10px">
+      Reset Game
+    </button>
+    <div id="board"></div>
+
+    <div id="chatBox">
+      <form id="chatForm">
+        <input type="text" id="chatInput" placeholder="Type a message" />
+        <button type="submit">Send</button>
+      </form>
+      <div id="messages"></div>
+    </div>
+
+    <script>
+      const board = document.getElementById("board");
+      const status = document.getElementById("status");
+      const winner = document.getElementById("winner");
+      const shots = document.getElementById("shots");
+      const score = document.getElementById("score");
+      const form = document.getElementById("roomForm");
+      const roomIdInput = document.getElementById("roomId");
+      const resetBtn = document.getElementById("resetBtn");
+      const chatForm = document.getElementById("chatForm");
+      const chatInput = document.getElementById("chatInput");
+      const messages = document.getElementById("messages");
+
+      const cells = [];
+      let myPlayer = null;
+
+      let currentPlayer = "X";
+      let socket;
+
+      for (let i = 0; i < 9; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.index = i;
+        board.appendChild(cell);
+        cells.push(cell);
+
+        cell.addEventListener("click", () => {
+          if (!myPlayer || currentPlayer !== myPlayer) return;
+          if (cell.textContent && cell.style.opacity === "1") return;
+
+          socket.send(
+            JSON.stringify({ type: "move", index: i, player: myPlayer })
+          );
+        });
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const room = roomIdInput.value.trim();
+        if (!room) return;
+
+        socket = new WebSocket("ws://localhost:3000");
+
+        socket.addEventListener("open", () => {
+          socket.send(JSON.stringify({ type: "join", roomId: room }));
+          status.textContent = `Joining room: ${room}`;
+          resetBtn.style.display = "inline-block";
+        });
+
+        socket.addEventListener("message", (event) => {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "init") {
+            myPlayer = data.playerId;
+            status.textContent = `You are Player ${myPlayer} in room ${room}`;
+          }
+
+          if (data.type === "move") {
+            if (data.removed) {
+              const removedCell = cells[data.removed.index];
+              removedCell.textContent = "";
+              removedCell.style.opacity = "1";
+            }
+
+            const cell = cells[data.index];
+            cell.textContent = data.player;
+            cell.style.opacity = "1";
+            currentPlayer = data.player === "X" ? "O" : "X";
+
+            if (data.faded) {
+              const fadedCell = cells[data.faded.index];
+              fadedCell.style.opacity = "0.3";
+            }
+
+            if (data.win) {
+              winner.textContent = `${data.player} wins!`;
+            }
+
+            if (data.shots) {
+              shots.textContent = `Shots - X: ${data.shots.X} | O: ${data.shots.O}`;
+            }
+
+            if (data.score) {
+              score.textContent = `Score - X: ${data.score.X} | O: ${data.score.O}`;
+            }
+          }
+
+          if (data.type === "reset") {
+            cells.forEach((cell) => {
+              cell.textContent = "";
+              cell.style.opacity = "1";
+            });
+            currentPlayer = "X";
+            winner.textContent = "";
+            shots.textContent = "";
+            if (data.score) {
+              score.textContent = `Score - X: ${data.score.X} | O: ${data.score.O}`;
+            }
+          }
+
+          if (data.type === "chat") {
+            const msg = document.createElement("div");
+            msg.textContent = `${data.player}: ${data.message}`;
+            messages.appendChild(msg);
+            messages.scrollTop = messages.scrollHeight;
+          }
+
+          if (data.type === "info") {
+            status.textContent = data.message;
+            if (data.message.includes("wins")) {
+              winner.textContent = data.message;
+            }
+            if (data.score) {
+              score.textContent = `Score - X: ${data.score.X} | O: ${data.score.O}`;
+            }
+          }
+
+          if (data.type === "error") {
+            alert(data.message);
+          }
+        });
+      });
+
+      resetBtn.addEventListener("click", () => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "reset" }));
+        }
+      });
+
+      chatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const msg = chatInput.value.trim();
+        if (!msg || !socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(
+          JSON.stringify({ type: "chat", message: msg, player: myPlayer })
+        );
+        chatInput.value = "";
+      });
+
+      socket.addEventListener("message", (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "move") {
+          const cell = cells[data.index];
+          cell.textContent = data.player;
+          cell.style.opacity = "1";
+          if (data.winCombo) {
+            data.winCombo.forEach((i) => {
+              cells[i].style.backgroundColor = "lightgreen";
+            });
+          }
+        }
+
+        if (data.type === "reset") {
+          cells.forEach((cell) => {
+            cell.textContent = "";
+            cell.style.opacity = "1";
+            cell.style.backgroundColor = "";
+          });
+        }
+      });
+    </script>
+  </body>
+</html>
