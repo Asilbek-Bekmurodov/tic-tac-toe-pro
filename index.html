@@ -123,8 +123,9 @@
         const room = roomIdInput.value.trim();
         if (!room) return;
 
-        socket = new WebSocket("wss://tic-tac-toe-pro.railway.internal");
-
+        socket = new WebSocket(
+          "wss://tic-tac-toe-pro-production.up.railway.app"
+        );
         socket.addEventListener("open", () => {
           socket.send(JSON.stringify({ type: "join", roomId: room }));
           status.textContent = `Joining room: ${room}`;
